@@ -68,6 +68,7 @@ static const gc9a01_lcd_init_cmd_t gc9107_lcd_init_cmds[] = {
 
 #include <esp_lvgl_port.h>
 #include <esp_system.h>
+#include <esp_random.h>
 #include <esp_timer.h>
 #include <driver/gpio.h>
 #include <driver/spi_master.h>
@@ -351,6 +352,10 @@ public:
         if (content == nullptr || content[0] == '\0') {
             return;
         }
+        if (role_tag == kRoleUser && IsNoiseTranscript(content)) {
+            ESP_LOGW(TAG, "Hidden noise transcript: %s", content);
+            return;  // e.g. "Lala School": speech recognition hearing background noise
+        }
         if (role_tag != kRoleSystem && view_ != kViewChat) {
             ShowChat();
         }
@@ -497,7 +502,9 @@ private:
     const lv_image_dsc_t* base_face_ = nullptr;
     const lv_image_dsc_t* shown_face_ = nullptr;
     const lv_image_dsc_t* shown_big_ = nullptr;
-    const char* pending_prompt_ = nullptr;
+    std::string pending_prompt_;
+    int last_story_ = -1;
+    int last_song_ = -1;
     uint32_t pending_ticks_ = 0;
     uint32_t tick_ = 0;
     uint32_t idle_ticks_ = 0;
@@ -610,6 +617,24 @@ private:
         ApplyFace(base_face_);
     }
 
+    /* ---------- noise filter ---------- */
+    // Speech recognition sometimes turns silence/noise into phrases like "Lala School".
+    static bool IsNoiseTranscript(const char* text) {
+        std::string t;
+        for (const char* p = text; *p; p++) {
+            char c = *p;
+            if (c >= 'A' && c <= 'Z') c = c - 'A' + 'a';
+            if (c == ' ' || c == '.' || c == ',' || c == '!' || c == '-') continue;
+            t += c;
+        }
+        static const char* const noise[] = {"lalaschool", "amara.org", "amaraorg", "subtitle",
+                                            "字幕", "谢谢观看", "请不吝点赞", "订阅"};
+        for (auto n : noise) {
+            if (t.find(n) != std::string::npos) return true;
+        }
+        return false;
+    }
+
     /* ---------- avatar ---------- */
     static const lv_image_dsc_t* BigOf(const lv_image_dsc_t* small) {
         if (small == &nhuy_face_neutral) return &nhuy_big_neutral;
@@ -678,7 +703,7 @@ private:
     }
 
     /* ---------- modes ---------- */
-    void StartMode(const char* prompt) {
+    void StartMode(const std::string& prompt) {
         ShowChat();
         pending_prompt_ = prompt;
         pending_ticks_ = 0;
@@ -688,18 +713,18 @@ private:
     // Invoke the pending prompt; if a conversation is running, WakeWordInvoke first stops it
     // and we try again on a later tick until the device is idle.
     void RunPending() {
-        if (pending_prompt_ == nullptr) return;
+        if (pending_prompt_.empty()) return;
         auto& app = Application::GetInstance();
         DeviceState state = app.GetDeviceState();
         if (state == kDeviceStateIdle) {
             app.WakeWordInvoke(pending_prompt_);
-            pending_prompt_ = nullptr;
+            pending_prompt_.clear();
         } else if (pending_ticks_ % 8 == 0 &&
                    (state == kDeviceStateSpeaking || state == kDeviceStateListening)) {
             app.WakeWordInvoke(pending_prompt_);  // stops speaking / closes listening
         }
         if (++pending_ticks_ > 80) {
-            pending_prompt_ = nullptr;  // give up after ~12 s
+            pending_prompt_.clear();  // give up after ~12 s
         }
     }
 
@@ -707,7 +732,7 @@ private:
     void Animate() {
         tick_++;
         DeviceState state = Application::GetInstance().GetDeviceState();
-        if (pending_prompt_ != nullptr) {
+        if (!pending_prompt_.empty()) {
             RunPending();
         }
 
@@ -732,7 +757,7 @@ private:
         ApplyFace(face);
 
         // Back to the home face after 60 s without any conversation.
-        if (view_ != kViewHome && state == kDeviceStateIdle && pending_prompt_ == nullptr) {
+        if (view_ != kViewHome && state == kDeviceStateIdle && pending_prompt_.empty()) {
             if (++idle_ticks_ > 400) {
                 ShowHome();
             }
@@ -776,10 +801,28 @@ private:
         else self->poke_ticks_ = 10;
     }
     static void OnBackHome(lv_event_t* e) { Self(e)->ShowHome(); }
+    static int PickRandom(int count, int& last) {
+        int n = (int)(esp_random() % (uint32_t)count);
+        if (n == last) n = (n + 1) % count;
+        last = n;
+        return n;
+    }
     static void OnStory(lv_event_t* e) {
-        Self(e)->StartMode(
-            "Như Ý ơi, kể cho mình nghe một câu chuyện ngắn bằng tiếng Anh thật đơn giản nhé. "
-            "Kể xong thì giải thích ngắn bằng tiếng Việt và hỏi mình một câu về câu chuyện.");
+        static const char* const stories[] = {
+            "The Little Red Kite", "The Hungry Cat", "Ben's First Day at School",
+            "The Ant and the Leaf", "The Magic Pencil", "The Lazy Rooster", "The Lost Puppy",
+            "The Tortoise and the Rabbit", "A Gift for Mom", "The Brave Little Fish",
+            "The Robot Who Wanted to Dance", "The Moon and the Lantern", "The Honest Woodcutter",
+            "The Seed That Waited", "The Elephant Who Was Afraid of Mice", "The Rainy Day Picnic",
+            "The Star Who Fell Down", "The Boy Who Cried Wolf", "The Clever Crow",
+            "The Kind Snowman"};
+        auto self = Self(e);
+        int n = PickRandom(sizeof(stories) / sizeof(stories[0]), self->last_story_);
+        self->StartMode(std::string("Như Ý ơi, kể cho mình nghe Truyện số ") +
+                        std::to_string(n + 1) + ": \"" + stories[n] +
+                        "\" trong thư viện truyện tiếng Anh nhé. Đọc bằng tiếng Anh thật chậm "
+                        "và rõ, rồi nói ý nghĩa bằng tiếng Việt, dạy 3 từ vựng và hỏi mình "
+                        "câu hỏi của truyện.");
     }
     static void OnLearn(lv_event_t* e) {
         Self(e)->StartMode(
@@ -787,8 +830,19 @@ private:
             "rồi mời mình đọc lại từng từ nhé.");
     }
     static void OnMusic(lv_event_t* e) {
-        Self(e)->StartMode(
-            "Như Ý ơi, phát cho mình nghe một bài hát tiếng Anh vui nhộn, nổi tiếng nhé.");
+        static const char* const songs[] = {
+            "Twinkle Twinkle Little Star", "Old MacDonald Had a Farm", "The Wheels on the Bus",
+            "Row Row Row Your Boat", "If You're Happy and You Know It",
+            "Head Shoulders Knees and Toes", "London Bridge Is Falling Down",
+            "Mary Had a Little Lamb", "Baby Shark - Pinkfong", "You Are My Sunshine",
+            "Happy Birthday to You", "Jingle Bells", "We Wish You a Merry Christmas",
+            "Count on Me - Bruno Mars", "Happy - Pharrell Williams", "Let It Go - Idina Menzel",
+            "Try Everything - Shakira", "A Whole New World - Aladdin",
+            "Yellow Submarine - The Beatles", "What a Wonderful World - Louis Armstrong"};
+        auto self = Self(e);
+        int n = PickRandom(sizeof(songs) / sizeof(songs[0]), self->last_song_);
+        self->StartMode(std::string("Như Ý ơi, phát cho mình nghe bài hát tiếng Anh \"") +
+                        songs[n] + "\" nhé.");
     }
 };
 

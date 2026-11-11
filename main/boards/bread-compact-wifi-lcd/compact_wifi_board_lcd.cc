@@ -62,6 +62,7 @@ static const gc9a01_lcd_init_cmd_t gc9107_lcd_init_cmds[] = {
 //  avatar header and chat bubbles, driven by the XPT2046 resistive touch.
 // ============================================================================
 #include "nhuy_assets.h"
+#include "nhuy_music.h"
 #include "assets/lang_config.h"
 #include "settings.h"
 #include "lvgl_theme.h"
@@ -90,6 +91,7 @@ static const gc9a01_lcd_init_cmd_t gc9107_lcd_init_cmds[] = {
 #define NY_SIDE_W     72
 #define NY_HEADER_H   128
 #define NY_MAX_MSG    16
+#define NY_SONG_COUNT 10   // number of songs in "Danh sach nhac" (Role text)
 
 static const char* const kRoleUser = "user";
 static const char* const kRoleAssistant = "assistant";
@@ -731,8 +733,29 @@ private:
         }
     }
 
+    /* ---------- music indicator in the status pill ---------- */
+    bool music_shown_ = false;
+    void UpdateMusicStatus() {
+        auto& music = NhuYMusic::Get();
+        bool show = music.busy();
+        if (show) {
+            std::string t = music.playing() ? "Playing: " + music.title() : "Music...";
+            if (!music_shown_ || strcmp(lv_label_get_text(notification_label_), t.c_str()) != 0) {
+                lv_label_set_text(notification_label_, t.c_str());
+            }
+            lv_obj_remove_flag(notification_label_, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(status_label_, LV_OBJ_FLAG_HIDDEN);
+            music_shown_ = true;
+        } else if (music_shown_) {
+            lv_obj_add_flag(notification_label_, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_remove_flag(status_label_, LV_OBJ_FLAG_HIDDEN);
+            music_shown_ = false;
+        }
+    }
+
     /* ---------- HOME: stop everything and go to the home face ---------- */
     void StopAndGoHome() {
+        NhuYMusic::Get().Stop();
         pending_prompt_.clear();
         stop_ticks_ = 1;
         RunStop(Application::GetInstance().GetDeviceState());
@@ -787,8 +810,9 @@ private:
             face = &nhuy_face_listen;
         } else if (state == kDeviceStateConnecting) {
             face = &nhuy_face_think;
-        } else if (poke_ticks_ > 0) {
-            face = &nhuy_face_happy;
+        } else if (poke_ticks_ > 0 || NhuYMusic::Get().playing()) {
+            face = (NhuYMusic::Get().playing() && (tick_ / 3) % 2) ? &nhuy_face_happy_talk
+                                                                    : &nhuy_face_happy;
         } else if (base_face_ == &nhuy_face_neutral && (tick_ % 27) == 0) {
             face = &nhuy_face_blink;
         }
@@ -803,6 +827,8 @@ private:
         } else {
             idle_ticks_ = 0;
         }
+
+        UpdateMusicStatus();
 
         if ((int)state != last_state_) {
             last_state_ = (int)state;
@@ -870,21 +896,23 @@ private:
             "rồi mời mình đọc lại từng từ nhé.");
     }
     static void OnMusic(lv_event_t* e) {
-        static const char* const songs[] = {
-            "Twinkle Twinkle Little Star", "Old MacDonald Had a Farm", "The Wheels on the Bus",
-            "Row Row Row Your Boat", "If You're Happy and You Know It",
-            "Head Shoulders Knees and Toes", "London Bridge Is Falling Down",
-            "Mary Had a Little Lamb", "Baby Shark - Pinkfong", "You Are My Sunshine",
-            "Happy Birthday to You", "Jingle Bells", "We Wish You a Merry Christmas",
-            "Count on Me - Bruno Mars", "Happy - Pharrell Williams", "Let It Go - Idina Menzel",
-            "Try Everything - Shakira", "A Whole New World - Aladdin",
-            "Yellow Submarine - The Beatles", "What a Wonderful World - Louis Armstrong"};
         auto self = Self(e);
-        int n = PickRandom(sizeof(songs) / sizeof(songs[0]), self->last_song_);
-        self->StartMode(std::string("Phát nhạc: ") + songs[n] +
-                        ". Như Ý ơi, hãy dùng ngay công cụ phát nhạc để phát bài hát tiếng Anh \"" +
-                        songs[n] + "\" cho mình nghe. Đây là yêu cầu nghe nhạc, không phải kể "
-                        "chuyện, đừng kể chuyện.");
+        auto& music = NhuYMusic::Get();
+        if (music.Count() > 0) {
+            // Songs on the SD card: stop the conversation and play one right away.
+            self->pending_prompt_.clear();
+            self->stop_ticks_ = 1;
+            music.PlayRandom(true);
+            self->ShowHome();
+            return;
+        }
+        // No SD card: ask the AI (song list "Danh sach nhac" in the Role text on xiaozhi.me).
+        int n = PickRandom(NY_SONG_COUNT, self->last_song_);
+        self->StartMode(std::string("Phát nhạc: bài số ") + std::to_string(n + 1) +
+                        " trong Danh sách nhạc của bạn. Hãy dùng ngay công cụ phát nhạc để phát "
+                        "đúng bài đó, tìm bằng đúng từ khóa ghi trong danh sách. Nếu không tìm "
+                        "thấy thì thử bài kế tiếp trong danh sách. Đây là yêu cầu nghe nhạc, "
+                        "không kể chuyện.");
     }
 };
 
@@ -1160,6 +1188,7 @@ public:
             GetBacklight()->RestoreBrightness();
         }
         InitializeTouch();
+        NhuYMusic::Get().Initialize();
     }
 
     virtual Led* GetLed() override {
@@ -1169,7 +1198,7 @@ public:
 
     virtual AudioCodec* GetAudioCodec() override {
 #ifdef AUDIO_I2S_METHOD_SIMPLEX
-        static NoAudioCodecSimplex audio_codec(AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
+        static NhuYCodec audio_codec(AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
             AUDIO_I2S_SPK_GPIO_BCLK, AUDIO_I2S_SPK_GPIO_LRCK, AUDIO_I2S_SPK_GPIO_DOUT, AUDIO_I2S_MIC_GPIO_SCK, AUDIO_I2S_MIC_GPIO_WS, AUDIO_I2S_MIC_GPIO_DIN);
 #else
         static NoAudioCodecDuplex audio_codec(AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,

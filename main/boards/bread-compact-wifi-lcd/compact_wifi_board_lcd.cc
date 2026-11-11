@@ -221,6 +221,8 @@ public:
 
         MakeButton(side_bar_, &nhuy_icon_vdown, (NY_SIDE_W - 60) / 2, 196, 60, 58,
                    lv_color_hex(0x3C8CFF), OnVolDown, LV_EVENT_PRESSED);
+        MakeButton(side_bar_, &nhuy_icon_home, (NY_SIDE_W - 60) / 2, 270, 60, 58,
+                   lv_color_hex(0x1EAA5A), OnHome, LV_EVENT_PRESSED);
         MakeButton(side_bar_, &nhuy_icon_reset, (NY_SIDE_W - 60) / 2, LV_VER_RES - 72, 60, 62,
                    lv_color_hex(0xDC3C46), OnReset, LV_EVENT_CLICKED);
 
@@ -503,6 +505,7 @@ private:
     const lv_image_dsc_t* shown_face_ = nullptr;
     const lv_image_dsc_t* shown_big_ = nullptr;
     std::string pending_prompt_;
+    uint32_t stop_ticks_ = 0;  // > 0 while the HOME button is stopping the conversation
     int last_story_ = -1;
     int last_song_ = -1;
     uint32_t pending_ticks_ = 0;
@@ -728,11 +731,47 @@ private:
         }
     }
 
+    /* ---------- HOME: stop everything and go to the home face ---------- */
+    void StopAndGoHome() {
+        pending_prompt_.clear();
+        stop_ticks_ = 1;
+        RunStop(Application::GetInstance().GetDeviceState());
+        ClearChatMessagesUnlocked();
+        ShowHome();
+    }
+
+    // Speaking (answer or music) -> abort; listening -> close the audio channel.
+    // Repeated every ~0.6 s until the device is idle (max ~6 s).
+    void RunStop(DeviceState state) {
+        auto& app = Application::GetInstance();
+        if (state == kDeviceStateIdle || stop_ticks_ > 40) {
+            stop_ticks_ = 0;
+            return;
+        }
+        if ((stop_ticks_ - 1) % 4 == 0) {
+            if (state == kDeviceStateSpeaking) {
+                app.Schedule([]() { Application::GetInstance().AbortSpeaking(kAbortReasonNone); });
+            } else if (state == kDeviceStateListening) {
+                app.ToggleChatState();
+            }
+        }
+        stop_ticks_++;
+    }
+
+    void ClearChatMessagesUnlocked() {
+        if (content_ != nullptr) {
+            lv_obj_clean(content_);
+        }
+        system_row_ = nullptr;
+    }
+
     /* ---------- animation tick (LVGL task, every 150 ms) ---------- */
     void Animate() {
         tick_++;
         DeviceState state = Application::GetInstance().GetDeviceState();
-        if (!pending_prompt_.empty()) {
+        if (stop_ticks_ > 0) {
+            RunStop(state);
+        } else if (!pending_prompt_.empty()) {
             RunPending();
         }
 
@@ -801,6 +840,7 @@ private:
         else self->poke_ticks_ = 10;
     }
     static void OnBackHome(lv_event_t* e) { Self(e)->ShowHome(); }
+    static void OnHome(lv_event_t* e) { Self(e)->StopAndGoHome(); }
     static int PickRandom(int count, int& last) {
         int n = (int)(esp_random() % (uint32_t)count);
         if (n == last) n = (n + 1) % count;
@@ -841,8 +881,10 @@ private:
             "Yellow Submarine - The Beatles", "What a Wonderful World - Louis Armstrong"};
         auto self = Self(e);
         int n = PickRandom(sizeof(songs) / sizeof(songs[0]), self->last_song_);
-        self->StartMode(std::string("Như Ý ơi, phát cho mình nghe bài hát tiếng Anh \"") +
-                        songs[n] + "\" nhé.");
+        self->StartMode(std::string("Phát nhạc: ") + songs[n] +
+                        ". Như Ý ơi, hãy dùng ngay công cụ phát nhạc để phát bài hát tiếng Anh \"" +
+                        songs[n] + "\" cho mình nghe. Đây là yêu cầu nghe nhạc, không phải kể "
+                        "chuyện, đừng kể chuyện.");
     }
 };
 

@@ -76,6 +76,7 @@ static const gc9a01_lcd_init_cmd_t gc9107_lcd_init_cmds[] = {
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 
 #define TAG "CompactWifiBoardLCD"
 
@@ -128,7 +129,7 @@ public:
         if (dev_ == nullptr || !Touched()) {
             return false;
         }
-        const int n = 5;
+        const int n = 3;
         int xs[n], ys[n];
         for (int i = 0; i < n; i++) {
             xs[i] = Read(0xD0);
@@ -192,7 +193,7 @@ public:
         lv_obj_t* screen = lv_screen_active();
         lv_obj_set_style_text_font(screen, text_font, 0);
         lv_obj_set_style_text_color(screen, lv_color_hex(0x1E1E28), 0);
-        lv_obj_set_style_bg_color(screen, lv_color_hex(0xFDF8EE), 0);
+        lv_obj_set_style_bg_color(screen, lv_color_hex(0x8CC8FF), 0);
         lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
         lv_obj_remove_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -202,13 +203,13 @@ public:
         lv_obj_set_size(side_bar_, NY_SIDE_W, LV_VER_RES);
         lv_obj_set_pos(side_bar_, 0, 0);
         lv_obj_set_style_bg_opa(side_bar_, LV_OPA_COVER, 0);
-        lv_obj_set_style_bg_color(side_bar_, lv_color_hex(0x286EDC), 0);
-        lv_obj_set_style_bg_grad_color(side_bar_, lv_color_hex(0x15306E), 0);
-        lv_obj_set_style_bg_grad_dir(side_bar_, LV_GRAD_DIR_VER, 0);
+        lv_obj_set_style_bg_color(side_bar_, lv_color_hex(0x1E4BA0), 0);
         lv_obj_remove_flag(side_bar_, LV_OBJ_FLAG_SCROLLABLE);
 
-        mic_btn_ = MakeButton(side_bar_, &nhuy_icon_mic, 10, 76, lv_color_hex(0x3C8CFF), OnMic);
-        MakeButton(side_bar_, &nhuy_icon_vup, 102, 58, lv_color_hex(0x3C8CFF), OnVolUp);
+        mic_btn_ = MakeButton(side_bar_, &nhuy_icon_mic, (NY_SIDE_W - 60) / 2, 10, 60, 76,
+                              lv_color_hex(0x3C8CFF), OnMic, LV_EVENT_PRESSED);
+        MakeButton(side_bar_, &nhuy_icon_vup, (NY_SIDE_W - 60) / 2, 102, 60, 58,
+                   lv_color_hex(0x3C8CFF), OnVolUp, LV_EVENT_PRESSED);
 
         volume_label_ = lv_label_create(side_bar_);
         lv_obj_set_width(volume_label_, NY_SIDE_W);
@@ -217,89 +218,40 @@ public:
         lv_obj_set_style_text_color(volume_label_, lv_color_white(), 0);
         lv_label_set_text(volume_label_, "");
 
-        MakeButton(side_bar_, &nhuy_icon_vdown, 196, 58, lv_color_hex(0x3C8CFF), OnVolDown);
-        MakeButton(side_bar_, &nhuy_icon_reset, LV_VER_RES - 72, 62, lv_color_hex(0xDC3C46),
-                   OnReset);
+        MakeButton(side_bar_, &nhuy_icon_vdown, (NY_SIDE_W - 60) / 2, 196, 60, 58,
+                   lv_color_hex(0x3C8CFF), OnVolDown, LV_EVENT_PRESSED);
+        MakeButton(side_bar_, &nhuy_icon_reset, (NY_SIDE_W - 60) / 2, LV_VER_RES - 72, 60, 62,
+                   lv_color_hex(0xDC3C46), OnReset, LV_EVENT_CLICKED);
 
-        /* ---------------- Header: avatar + name + status ---------------- */
-        top_bar_ = lv_obj_create(screen);
-        lv_obj_remove_style_all(top_bar_);
-        lv_obj_set_size(top_bar_, main_w, NY_HEADER_H);
-        lv_obj_set_pos(top_bar_, NY_SIDE_W, 0);
-        lv_obj_set_style_bg_opa(top_bar_, LV_OPA_COVER, 0);
-        lv_obj_set_style_bg_color(top_bar_, lv_color_hex(0x8CC8FF), 0);
-        lv_obj_remove_flag(top_bar_, LV_OBJ_FLAG_SCROLLABLE);
+        /* ================= CHAT VIEW ================= */
+        chat_view_ = MakePanel(screen, NY_SIDE_W, 0, main_w, LV_VER_RES, 0xFDF8EE);
+
+        top_bar_ = MakePanel(chat_view_, 0, 0, main_w, NY_HEADER_H, 0x8CC8FF);
 
         avatar_ = lv_image_create(top_bar_);
         lv_image_set_src(avatar_, &nhuy_face_neutral);
         lv_obj_set_pos(avatar_, 2, NY_HEADER_H - nhuy_face_neutral.header.h);
-        base_face_ = &nhuy_face_neutral;
-        shown_face_ = &nhuy_face_neutral;
+        lv_obj_add_flag(avatar_, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(avatar_, OnBackHome, LV_EVENT_PRESSED, this);
 
         lv_obj_t* title = lv_image_create(top_bar_);
         lv_image_set_src(title, &nhuy_title);
-        lv_obj_set_pos(title, 110, 24);
+        lv_obj_set_pos(title, 110, 20);
 
-        lv_obj_t* subtitle = lv_image_create(top_bar_);
-        lv_image_set_src(subtitle, &nhuy_subtitle);
-        lv_obj_set_pos(subtitle, 110, 58);
+        MakeButton(top_bar_, &nhuy_btn_back_small, 110, 56, 104, 30, lv_color_hex(0x286EDC),
+                   OnBackHome, LV_EVENT_PRESSED);
 
-        network_label_ = lv_label_create(top_bar_);
-        lv_label_set_text(network_label_, "");
-        lv_obj_set_style_text_font(network_label_, icon_font, 0);
-        lv_obj_set_style_text_color(network_label_, lv_color_hex(0x143278), 0);
-        lv_obj_align(network_label_, LV_ALIGN_TOP_RIGHT, -6, 3);
+        network_label_ = MakeIcon(top_bar_, icon_font, 0x143278, -6);
+        battery_label_ = MakeIcon(top_bar_, icon_font, 0x143278, -34);
+        mute_label_ = MakeIcon(top_bar_, icon_font, 0xDC3C46, -62);
 
-        battery_label_ = lv_label_create(top_bar_);
-        lv_label_set_text(battery_label_, "");
-        lv_obj_set_style_text_font(battery_label_, icon_font, 0);
-        lv_obj_set_style_text_color(battery_label_, lv_color_hex(0x143278), 0);
-        lv_obj_align(battery_label_, LV_ALIGN_TOP_RIGHT, -34, 3);
+        lv_obj_t* divider = MakePanel(chat_view_, 0, NY_HEADER_H, main_w, 3, 0x286EDC);
+        (void)divider;
 
-        mute_label_ = lv_label_create(top_bar_);
-        lv_label_set_text(mute_label_, "");
-        lv_obj_set_style_text_font(mute_label_, icon_font, 0);
-        lv_obj_set_style_text_color(mute_label_, lv_color_hex(0xDC3C46), 0);
-        lv_obj_align(mute_label_, LV_ALIGN_TOP_RIGHT, -62, 3);
-
-        status_bar_ = lv_obj_create(top_bar_);
-        lv_obj_remove_style_all(status_bar_);
-        lv_obj_set_size(status_bar_, main_w - 112, 28);
-        lv_obj_set_pos(status_bar_, 108, NY_HEADER_H - 34);
-        lv_obj_set_style_radius(status_bar_, 14, 0);
-        lv_obj_set_style_bg_opa(status_bar_, LV_OPA_COVER, 0);
-        lv_obj_set_style_bg_color(status_bar_, lv_color_white(), 0);
-        lv_obj_remove_flag(status_bar_, LV_OBJ_FLAG_SCROLLABLE);
-
-        status_label_ = lv_label_create(status_bar_);
-        lv_obj_set_width(status_label_, main_w - 124);
-        lv_label_set_long_mode(status_label_, LV_LABEL_LONG_SCROLL_CIRCULAR);
-        lv_obj_set_style_text_align(status_label_, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_style_text_color(status_label_, lv_color_hex(0x286EDC), 0);
-        lv_label_set_text(status_label_, Lang::Strings::INITIALIZING);
-        lv_obj_center(status_label_);
-
-        notification_label_ = lv_label_create(status_bar_);
-        lv_obj_set_width(notification_label_, main_w - 124);
-        lv_label_set_long_mode(notification_label_, LV_LABEL_LONG_SCROLL_CIRCULAR);
-        lv_obj_set_style_text_align(notification_label_, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_style_text_color(notification_label_, lv_color_hex(0xE07814), 0);
-        lv_label_set_text(notification_label_, "");
-        lv_obj_center(notification_label_);
-        lv_obj_add_flag(notification_label_, LV_OBJ_FLAG_HIDDEN);
-
-        lv_obj_t* divider = lv_obj_create(screen);
-        lv_obj_remove_style_all(divider);
-        lv_obj_set_size(divider, main_w, 3);
-        lv_obj_set_pos(divider, NY_SIDE_W, NY_HEADER_H);
-        lv_obj_set_style_bg_opa(divider, LV_OPA_COVER, 0);
-        lv_obj_set_style_bg_color(divider, lv_color_hex(0x286EDC), 0);
-
-        /* ---------------- Chat area ---------------- */
-        content_ = lv_obj_create(screen);
+        content_ = lv_obj_create(chat_view_);
         lv_obj_remove_style_all(content_);
         lv_obj_set_size(content_, main_w, LV_VER_RES - NY_HEADER_H - 3);
-        lv_obj_set_pos(content_, NY_SIDE_W, NY_HEADER_H + 3);
+        lv_obj_set_pos(content_, 0, NY_HEADER_H + 3);
         lv_obj_set_style_bg_opa(content_, LV_OPA_COVER, 0);
         lv_obj_set_style_bg_color(content_, lv_color_hex(0xFDF8EE), 0);
         lv_obj_set_style_pad_all(content_, 8, 0);
@@ -310,6 +262,64 @@ public:
         lv_obj_set_scroll_dir(content_, LV_DIR_VER);
         lv_obj_set_scrollbar_mode(content_, LV_SCROLLBAR_MODE_OFF);
 
+        /* ================= HOME / MENU VIEW ================= */
+        home_view_ = MakePanel(screen, NY_SIDE_W, 0, main_w, LV_VER_RES, 0x8CC8FF);
+
+        big_face_ = lv_image_create(home_view_);
+        lv_image_set_src(big_face_, &nhuy_big_neutral);
+        lv_obj_add_flag(big_face_, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_ext_click_area(big_face_, 12);
+        lv_obj_add_event_cb(big_face_, OnFaceTap, LV_EVENT_PRESSED, this);
+
+        home_title_ = lv_image_create(home_view_);
+        lv_image_set_src(home_title_, &nhuy_title);
+
+        home_hint_ = lv_image_create(home_view_);
+        lv_image_set_src(home_hint_, &nhuy_hint);
+
+        home_info_ = lv_label_create(home_view_);
+        lv_obj_set_width(home_info_, main_w - 20);
+        lv_label_set_long_mode(home_info_, LV_LABEL_LONG_WRAP);
+        lv_obj_set_style_text_align(home_info_, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_color(home_info_, lv_color_hex(0x143278), 0);
+        lv_label_set_text(home_info_, "");
+
+        menu_box_ = MakePanel(home_view_, 0, 230, main_w, LV_VER_RES - 230, 0x8CC8FF);
+        lv_obj_set_style_bg_opa(menu_box_, LV_OPA_TRANSP, 0);
+        const int bx = (main_w - 228) / 2;
+        MakeButton(menu_box_, &nhuy_btn_story, bx, 4, 228, 52, lv_color_hex(0x8C5AE6), OnStory,
+                   LV_EVENT_PRESSED);
+        MakeButton(menu_box_, &nhuy_btn_learn, bx, 64, 228, 52, lv_color_hex(0x1EAA5A), OnLearn,
+                   LV_EVENT_PRESSED);
+        MakeButton(menu_box_, &nhuy_btn_music, bx, 124, 228, 52, lv_color_hex(0xF08C28),
+                   OnMusic, LV_EVENT_PRESSED);
+        MakeButton(menu_box_, &nhuy_btn_back, bx, 184, 228, 52, lv_color_hex(0x5A6E8C), OnBackHome,
+                   LV_EVENT_PRESSED);
+
+        /* Status pill (moved between the views) */
+        status_bar_ = lv_obj_create(home_view_);
+        lv_obj_remove_style_all(status_bar_);
+        lv_obj_set_style_radius(status_bar_, 14, 0);
+        lv_obj_set_style_bg_opa(status_bar_, LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_color(status_bar_, lv_color_white(), 0);
+        lv_obj_remove_flag(status_bar_, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_remove_flag(status_bar_, LV_OBJ_FLAG_CLICKABLE);
+
+        status_label_ = lv_label_create(status_bar_);
+        lv_label_set_long_mode(status_label_, LV_LABEL_LONG_SCROLL_CIRCULAR);
+        lv_obj_set_style_text_align(status_label_, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_color(status_label_, lv_color_hex(0x286EDC), 0);
+        lv_label_set_text(status_label_, Lang::Strings::INITIALIZING);
+
+        notification_label_ = lv_label_create(status_bar_);
+        lv_label_set_long_mode(notification_label_, LV_LABEL_LONG_SCROLL_CIRCULAR);
+        lv_obj_set_style_text_align(notification_label_, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_color(notification_label_, lv_color_hex(0xE07814), 0);
+        lv_label_set_text(notification_label_, "");
+        lv_obj_add_flag(notification_label_, LV_OBJ_FLAG_HIDDEN);
+
+        base_face_ = &nhuy_face_neutral;
+        ShowHome();
         UpdateVolumeLabel();
         anim_timer_ = lv_timer_create(AnimTick, 150, this);
     }
@@ -326,15 +336,23 @@ public:
             role_tag = kRoleSystem;
         }
 
-        // Only one system line is kept; a new (or empty) one replaces it.
-        if (role_tag == kRoleSystem && system_row_ != nullptr) {
-            if (lv_obj_is_valid(system_row_)) {
-                lv_obj_delete(system_row_);
+        if (role_tag == kRoleSystem) {
+            // System lines (activation code, errors...) are also shown on the home screen.
+            if (home_info_ != nullptr) {
+                lv_label_set_text(home_info_, content != nullptr ? content : "");
             }
-            system_row_ = nullptr;
+            if (system_row_ != nullptr) {
+                if (lv_obj_is_valid(system_row_)) {
+                    lv_obj_delete(system_row_);
+                }
+                system_row_ = nullptr;
+            }
         }
         if (content == nullptr || content[0] == '\0') {
             return;
+        }
+        if (role_tag != kRoleSystem && view_ != kViewChat) {
+            ShowChat();
         }
 
         while (lv_obj_get_child_cnt(content_) >= NY_MAX_MSG) {
@@ -437,10 +455,7 @@ public:
         const lv_image_dsc_t* face = MapEmotion(emotion);
         DisplayLockGuard lock(this);
         base_face_ = face;
-        if (avatar_ != nullptr && face != shown_face_) {
-            lv_image_set_src(avatar_, face);
-            shown_face_ = face;
-        }
+        ApplyFace(face);
         return true;
     }
 
@@ -464,6 +479,16 @@ public:
     }
 
 private:
+    enum View { kViewHome, kViewMenu, kViewChat };
+
+    View view_ = kViewHome;
+    lv_obj_t* chat_view_ = nullptr;
+    lv_obj_t* home_view_ = nullptr;
+    lv_obj_t* menu_box_ = nullptr;
+    lv_obj_t* big_face_ = nullptr;
+    lv_obj_t* home_title_ = nullptr;
+    lv_obj_t* home_hint_ = nullptr;
+    lv_obj_t* home_info_ = nullptr;
     lv_obj_t* mic_btn_ = nullptr;
     lv_obj_t* volume_label_ = nullptr;
     lv_obj_t* avatar_ = nullptr;
@@ -471,15 +496,42 @@ private:
     lv_timer_t* anim_timer_ = nullptr;
     const lv_image_dsc_t* base_face_ = nullptr;
     const lv_image_dsc_t* shown_face_ = nullptr;
+    const lv_image_dsc_t* shown_big_ = nullptr;
+    const char* pending_prompt_ = nullptr;
+    uint32_t pending_ticks_ = 0;
     uint32_t tick_ = 0;
+    uint32_t idle_ticks_ = 0;
+    uint32_t poke_ticks_ = 0;
     int last_state_ = -1;
 
-    lv_obj_t* MakeButton(lv_obj_t* parent, const lv_image_dsc_t* icon, int y, int h,
-                         lv_color_t color, lv_event_cb_t cb) {
+    /* ---------- small widget helpers ---------- */
+    lv_obj_t* MakePanel(lv_obj_t* parent, int x, int y, int w, int h, uint32_t color) {
+        lv_obj_t* p = lv_obj_create(parent);
+        lv_obj_remove_style_all(p);
+        lv_obj_set_size(p, w, h);
+        lv_obj_set_pos(p, x, y);
+        lv_obj_set_style_bg_opa(p, LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_color(p, lv_color_hex(color), 0);
+        lv_obj_remove_flag(p, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_remove_flag(p, LV_OBJ_FLAG_CLICKABLE);
+        return p;
+    }
+
+    lv_obj_t* MakeIcon(lv_obj_t* parent, const lv_font_t* font, uint32_t color, int x_ofs) {
+        lv_obj_t* l = lv_label_create(parent);
+        lv_label_set_text(l, "");
+        lv_obj_set_style_text_font(l, font, 0);
+        lv_obj_set_style_text_color(l, lv_color_hex(color), 0);
+        lv_obj_align(l, LV_ALIGN_TOP_RIGHT, x_ofs, 3);
+        return l;
+    }
+
+    lv_obj_t* MakeButton(lv_obj_t* parent, const lv_image_dsc_t* icon, int x, int y, int w, int h,
+                         lv_color_t color, lv_event_cb_t cb, lv_event_code_t code) {
         lv_obj_t* btn = lv_button_create(parent);
         lv_obj_remove_style_all(btn);
-        lv_obj_set_size(btn, 60, h);
-        lv_obj_set_pos(btn, (NY_SIDE_W - 60) / 2, y);
+        lv_obj_set_size(btn, w, h);
+        lv_obj_set_pos(btn, x, y);
         lv_obj_set_style_radius(btn, 14, 0);
         lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
         lv_obj_set_style_bg_color(btn, color, 0);
@@ -488,14 +540,108 @@ private:
         lv_obj_set_style_border_color(btn, lv_color_white(), 0);
         lv_obj_set_style_border_opa(btn, LV_OPA_40, 0);
         lv_obj_remove_flag(btn, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_ext_click_area(btn, 4);
 
         lv_obj_t* img = lv_image_create(btn);
         lv_image_set_src(img, icon);
         lv_obj_center(img);
         lv_obj_remove_flag(img, LV_OBJ_FLAG_CLICKABLE);
 
-        lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, this);
+        lv_obj_add_event_cb(btn, cb, code, this);
         return btn;
+    }
+
+    void PlaceStatus(lv_obj_t* parent, int x, int y, int w) {
+        if (status_bar_ == nullptr) return;
+        lv_obj_set_parent(status_bar_, parent);
+        lv_obj_set_size(status_bar_, w, 28);
+        lv_obj_set_pos(status_bar_, x, y);
+        lv_obj_set_width(status_label_, w - 14);
+        lv_obj_set_width(notification_label_, w - 14);
+        lv_obj_center(status_label_);
+        lv_obj_center(notification_label_);
+        lv_obj_move_foreground(status_bar_);
+    }
+
+    /* ---------- views ---------- */
+    void ShowHome() {
+        const int main_w = LV_HOR_RES - NY_SIDE_W;
+        view_ = kViewHome;
+        lv_obj_add_flag(chat_view_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(home_view_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(menu_box_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_pos(big_face_, (main_w - (int)nhuy_big_neutral.header.w) / 2, 84);
+        lv_obj_remove_flag(home_title_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(home_hint_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(home_info_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_pos(home_title_, (main_w - (int)nhuy_title.header.w) / 2 + 22, 250);
+        lv_obj_set_pos(home_hint_, (main_w - (int)nhuy_hint.header.w) / 2, 292);
+        PlaceStatus(home_view_, 24, 332, main_w - 48);
+        lv_obj_set_pos(home_info_, 10, 376);
+        idle_ticks_ = 0;
+        shown_big_ = nullptr;
+        ApplyFace(base_face_);
+    }
+
+    void ShowMenu() {
+        const int main_w = LV_HOR_RES - NY_SIDE_W;
+        view_ = kViewMenu;
+        lv_obj_add_flag(chat_view_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(home_view_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(menu_box_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_pos(big_face_, (main_w - (int)nhuy_big_neutral.header.w) / 2, 6);
+        lv_obj_add_flag(home_title_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(home_hint_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(home_info_, LV_OBJ_FLAG_HIDDEN);
+        PlaceStatus(home_view_, 24, 190, main_w - 48);
+        idle_ticks_ = 0;
+        poke_ticks_ = 10;
+        ApplyFace(base_face_);
+    }
+
+    void ShowChat() {
+        const int main_w = LV_HOR_RES - NY_SIDE_W;
+        view_ = kViewChat;
+        lv_obj_add_flag(home_view_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(chat_view_, LV_OBJ_FLAG_HIDDEN);
+        PlaceStatus(top_bar_, 108, NY_HEADER_H - 34, main_w - 112);
+        idle_ticks_ = 0;
+        shown_face_ = nullptr;
+        ApplyFace(base_face_);
+    }
+
+    /* ---------- avatar ---------- */
+    static const lv_image_dsc_t* BigOf(const lv_image_dsc_t* small) {
+        if (small == &nhuy_face_neutral) return &nhuy_big_neutral;
+        if (small == &nhuy_face_blink) return &nhuy_big_blink;
+        if (small == &nhuy_face_happy) return &nhuy_big_happy;
+        if (small == &nhuy_face_happy_talk) return &nhuy_big_happy_talk;
+        if (small == &nhuy_face_talk || small == &nhuy_face_surprised) return &nhuy_big_talk;
+        if (small == &nhuy_face_listen) return &nhuy_big_listen;
+        return nullptr;
+    }
+
+    void ApplyFace(const lv_image_dsc_t* face) {
+        if (face == nullptr) return;
+        if (view_ == kViewChat) {
+            if (avatar_ != nullptr && face != shown_face_) {
+                lv_image_set_src(avatar_, face);
+                shown_face_ = face;
+            }
+        } else if (big_face_ != nullptr && face != shown_big_) {
+            const lv_image_dsc_t* big = BigOf(face);
+            if (big != nullptr) {
+                lv_image_set_src(big_face_, big);
+                lv_image_set_scale(big_face_, LV_SCALE_NONE);
+            } else {
+                // No large version: draw the small frame enlarged to the same size.
+                lv_image_set_src(big_face_, face);
+                lv_image_set_pivot(big_face_, 0, 0);
+                lv_image_set_scale(big_face_, LV_SCALE_NONE * nhuy_big_neutral.header.w /
+                                                  nhuy_face_neutral.header.w);
+            }
+            shown_big_ = face;
+        }
     }
 
     static const lv_image_dsc_t* MapEmotion(const char* e) {
@@ -513,6 +659,7 @@ private:
         return &nhuy_face_neutral;
     }
 
+    /* ---------- volume ---------- */
     void UpdateVolumeLabel() {
         if (volume_label_ == nullptr) return;
         auto codec = Board::GetInstance().GetAudioCodec();
@@ -530,12 +677,41 @@ private:
         UpdateVolumeLabel();
     }
 
+    /* ---------- modes ---------- */
+    void StartMode(const char* prompt) {
+        ShowChat();
+        pending_prompt_ = prompt;
+        pending_ticks_ = 0;
+        RunPending();
+    }
+
+    // Invoke the pending prompt; if a conversation is running, WakeWordInvoke first stops it
+    // and we try again on a later tick until the device is idle.
+    void RunPending() {
+        if (pending_prompt_ == nullptr) return;
+        auto& app = Application::GetInstance();
+        DeviceState state = app.GetDeviceState();
+        if (state == kDeviceStateIdle) {
+            app.WakeWordInvoke(pending_prompt_);
+            pending_prompt_ = nullptr;
+        } else if (pending_ticks_ % 8 == 0 &&
+                   (state == kDeviceStateSpeaking || state == kDeviceStateListening)) {
+            app.WakeWordInvoke(pending_prompt_);  // stops speaking / closes listening
+        }
+        if (++pending_ticks_ > 80) {
+            pending_prompt_ = nullptr;  // give up after ~12 s
+        }
+    }
+
+    /* ---------- animation tick (LVGL task, every 150 ms) ---------- */
     void Animate() {
-        if (avatar_ == nullptr) return;
         tick_++;
         DeviceState state = Application::GetInstance().GetDeviceState();
-        const lv_image_dsc_t* face = base_face_;
+        if (pending_prompt_ != nullptr) {
+            RunPending();
+        }
 
+        const lv_image_dsc_t* face = base_face_;
         if (state == kDeviceStateSpeaking) {
             bool open = (tick_ % 2) == 0;
             if (base_face_ == &nhuy_face_happy) {
@@ -547,13 +723,21 @@ private:
             face = &nhuy_face_listen;
         } else if (state == kDeviceStateConnecting) {
             face = &nhuy_face_think;
+        } else if (poke_ticks_ > 0) {
+            face = &nhuy_face_happy;
         } else if (base_face_ == &nhuy_face_neutral && (tick_ % 27) == 0) {
             face = &nhuy_face_blink;
         }
+        if (poke_ticks_ > 0) poke_ticks_--;
+        ApplyFace(face);
 
-        if (face != nullptr && face != shown_face_) {
-            lv_image_set_src(avatar_, face);
-            shown_face_ = face;
+        // Back to the home face after 60 s without any conversation.
+        if (view_ != kViewHome && state == kDeviceStateIdle && pending_prompt_ == nullptr) {
+            if (++idle_ticks_ > 400) {
+                ShowHome();
+            }
+        } else {
+            idle_ticks_ = 0;
         }
 
         if ((int)state != last_state_) {
@@ -567,23 +751,44 @@ private:
         }
     }
 
+    /* ---------- event callbacks ---------- */
+    static NhuYDisplay* Self(lv_event_t* e) {
+        return static_cast<NhuYDisplay*>(lv_event_get_user_data(e));
+    }
     static void AnimTick(lv_timer_t* t) {
         static_cast<NhuYDisplay*>(lv_timer_get_user_data(t))->Animate();
     }
     static void OnMic(lv_event_t* e) {
-        (void)e;
+        auto self = Self(e);
+        if (self->view_ != kViewChat) self->ShowChat();
         Application::GetInstance().ToggleChatState();
     }
-    static void OnVolUp(lv_event_t* e) {
-        static_cast<NhuYDisplay*>(lv_event_get_user_data(e))->ChangeVolume(10);
-    }
-    static void OnVolDown(lv_event_t* e) {
-        static_cast<NhuYDisplay*>(lv_event_get_user_data(e))->ChangeVolume(-10);
-    }
+    static void OnVolUp(lv_event_t* e) { Self(e)->ChangeVolume(10); }
+    static void OnVolDown(lv_event_t* e) { Self(e)->ChangeVolume(-10); }
     static void OnReset(lv_event_t* e) {
         (void)e;
         ESP_LOGW(TAG, "Reset button pressed - restarting");
         esp_restart();
+    }
+    static void OnFaceTap(lv_event_t* e) {
+        auto self = Self(e);
+        if (self->view_ == kViewHome) self->ShowMenu();
+        else self->poke_ticks_ = 10;
+    }
+    static void OnBackHome(lv_event_t* e) { Self(e)->ShowHome(); }
+    static void OnStory(lv_event_t* e) {
+        Self(e)->StartMode(
+            "Như Ý ơi, kể cho mình nghe một câu chuyện ngắn bằng tiếng Anh thật đơn giản nhé. "
+            "Kể xong thì giải thích ngắn bằng tiếng Việt và hỏi mình một câu về câu chuyện.");
+    }
+    static void OnLearn(lv_event_t* e) {
+        Self(e)->StartMode(
+            "Như Ý ơi, mình muốn học tiếng Anh. Dạy mình 3 từ vựng mới kèm câu ví dụ đơn giản, "
+            "rồi mời mình đọc lại từng từ nhé.");
+    }
+    static void OnMusic(lv_event_t* e) {
+        Self(e)->StartMode(
+            "Như Ý ơi, phát cho mình nghe một bài hát tiếng Anh vui nhộn, nổi tiếng nhé.");
     }
 };
 
@@ -842,6 +1047,7 @@ private:
         lv_indev_set_read_cb(indev, TouchRead);
         lv_indev_set_user_data(indev, this);
         lv_indev_set_disp(indev, lv_display_get_default());
+        lv_timer_set_period(lv_indev_get_read_timer(indev), 10);  // poll touch every 10 ms
         lvgl_port_unlock();
         touch_ok_ = true;
         ESP_LOGI(TAG, "Touch ready");

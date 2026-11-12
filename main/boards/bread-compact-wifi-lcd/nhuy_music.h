@@ -112,12 +112,33 @@ public:
         return true;
     }
 
-    bool PlayRandom(bool interrupt) {
+    // Returns the index of the chosen song, or -1 when there are no songs.
+    int PlayRandom(bool interrupt) {
         int n = Count();
-        if (n == 0) return false;
+        if (n == 0) return -1;
         int i = (int)(esp_random() % (uint32_t)n);
         if (n > 1 && i == last_index_) i = (i + 1) % n;
-        return PlayIndex(i, interrupt);
+        return PlayIndex(i, interrupt) ? i : -1;
+    }
+
+    // True when the request does not name a song: "phát 1 bài nhạc tiếng Anh",
+    // "play a song", "bài nào cũng được"...
+    static bool IsGenericRequest(const std::string& query) {
+        static const char* const generic[] = {
+            "nhac", "bai", "hat", "baihat", "tieng", "anh", "viet", "english", "vietnamese",
+            "song", "songs", "music", "mot", "cho", "toi", "minh", "ban", "phat", "nghe", "mo",
+            "bat", "ngau", "nhien", "ky", "nao", "cung", "duoc", "random", "any", "play", "the",
+            "di", "nhe", "voi", "hay", "vui", "nhon", "thieu", "nhi", "tre", "em", "be", "kids",
+            "kid", "children", "nursery", "rhyme", "rhymes", "some", "one", "please", "khac",
+            "another", "something", "gi", "do", "dau", "mot", "it", "nua", "them", "ca", "khuc"};
+        for (auto& w : QueryWords(query)) {
+            bool is_generic = false;
+            for (auto g : generic) {
+                if (w == g) { is_generic = true; break; }
+            }
+            if (!is_generic) return false;
+        }
+        return true;  // empty query or only generic words
     }
 
     // Best match by title; accents and case are ignored ("bai ca di hoc" = "Bài ca đi học").
@@ -132,7 +153,7 @@ public:
             if (t == q) score = 1000;
             else if (t.find(q) != std::string::npos) score = 500 + (int)q.size();
             else if (q.find(t) != std::string::npos) score = 400 + (int)t.size();
-            else score = CommonWords(QueryWords(query), songs_[i].title) * 10;
+            else score = WordScore(QueryWords(query), songs_[i].title);
             if (score > best_score) {
                 best_score = score;
                 best = i;
@@ -226,6 +247,16 @@ private:
             Song s;
             s.path = dir + "/" + ent->d_name;
             s.title = std::string(ent->d_name, strlen(ent->d_name) - 4);
+            // "07 Happy Birthday" -> "Happy Birthday" (number prefixes only sort the files)
+            size_t k = 0;
+            while (k < s.title.size() && s.title[k] >= '0' && s.title[k] <= '9') k++;
+            if (k > 0 && k < s.title.size() && (s.title[k] == ' ' || s.title[k] == '.' ||
+                                                 s.title[k] == '-' || s.title[k] == '_')) {
+                size_t j = k;
+                while (j < s.title.size() && (s.title[j] == ' ' || s.title[j] == '.' ||
+                                              s.title[j] == '-' || s.title[j] == '_')) j++;
+                if (j < s.title.size()) s.title = s.title.substr(j);
+            }
             s.key = Normalize(s.title);
             songs_.push_back(s);
         }
@@ -300,11 +331,23 @@ private:
         return v;
     }
 
-    static int CommonWords(const std::vector<std::string>& q, const std::string& title) {
+    // Word-level match that ignores small words ("you", "the", "of"...): at least half of
+    // the meaningful query words must be in the title, otherwise it is not this song.
+    static int WordScore(const std::vector<std::string>& q, const std::string& title) {
+        static const char* const stop[] = {"the", "a", "an", "of", "to", "you", "my", "me", "i",
+                                           "is", "on", "in", "and", "it", "we", "your", "for",
+                                           "bai", "hat", "nhac", "phat", "cho", "toi", "minh"};
         std::string t = " " + Words(title) + " ";
-        int n = 0;
-        for (auto& w : q) if (t.find(" " + w + " ") != std::string::npos) n++;
-        return n;
+        int total = 0, hit = 0;
+        for (auto& w : q) {
+            bool is_stop = false;
+            for (auto st : stop) if (w == st) { is_stop = true; break; }
+            if (is_stop) continue;
+            total++;
+            if (t.find(" " + w + " ") != std::string::npos) hit++;
+        }
+        if (total == 0 || hit * 2 < total) return 0;
+        return hit * 10;
     }
 
     /* ---------------- MCP tools ---------------- */
@@ -327,25 +370,52 @@ private:
         mcp.AddTool("self.music.play",
                     "Play a song from this device's SD card. ALWAYS use this tool first when "
                     "the user asks to play / listen to a song or music (English or Vietnamese). "
-                    "`name` is the song title, accents are optional. The song starts right "
-                    "after you finish your short reply, so keep the reply to one sentence.",
+                    "`name` is the song title, accents are optional. If the user does not name "
+                    "a specific song (e.g. 'phát 1 bài nhạc tiếng Anh', 'play any song'), pass "
+                    "name=\"random\" and a random song is played. The song starts right after "
+                    "your reply, so reply with ONE short sentence that says the returned title.",
                     PropertyList({Property("name", kPropertyTypeString)}),
                     [this](const PropertyList& p) -> ReturnValue {
-                        int i = Find(p["name"].value<std::string>());
+                        std::string name = p["name"].value<std::string>();
+                        if (IsGenericRequest(name)) {
+                            int r = PlayRandom(false);
+                            if (r < 0) {
+                                return std::string("{\"ok\":false,\"error\":\"no songs on SD card\"}");
+                            }
+                            return "{\"ok\":true,\"playing\":\"" + JsonEscape(TitleAt(r)) +
+                                   "\",\"say\":\"Mình mở bài " + JsonEscape(TitleAt(r)) +
+                                   " cho bạn nghe nhé!\"}";
+                        }
+                        int i = Find(name);
                         if (i < 0) {
-                            return std::string("{\"ok\":false,\"error\":\"song not found on SD "
-                                               "card, call self.music.list\"}");
+                            // Not on the card: tell the AI which songs exist so it can suggest
+                            // some, instead of silently playing a different song.
+                            std::string out = "{\"ok\":false,\"error\":\"this song is not on the "
+                                              "SD card; tell the user and suggest 3 songs from "
+                                              "available\",\"available\":[";
+                            auto titles = Titles();
+                            for (size_t k = 0; k < titles.size() && k < 12; k++) {
+                                if (k) out += ",";
+                                out += "\"" + JsonEscape(titles[k]) + "\"";
+                            }
+                            return out + "]}";
                         }
                         PlayIndex(i, false);
-                        return "{\"ok\":true,\"playing\":\"" + JsonEscape(TitleAt(i)) + "\"}";
+                        return "{\"ok\":true,\"playing\":\"" + JsonEscape(TitleAt(i)) +
+                               "\",\"say\":\"Mình mở bài " + JsonEscape(TitleAt(i)) +
+                               " cho bạn nghe nhé!\"}";
                     });
         mcp.AddTool("self.music.play_random",
-                    "Play a random song from this device's SD card.", PropertyList(),
+                    "Play a random song from this device's SD card. Use it whenever the user asks "
+                    "for music without naming a song.", PropertyList(),
                     [this](const PropertyList&) -> ReturnValue {
-                        if (!PlayRandom(false)) {
+                        int r = PlayRandom(false);
+                        if (r < 0) {
                             return std::string("{\"ok\":false,\"error\":\"no songs\"}");
                         }
-                        return std::string("{\"ok\":true}");
+                        return "{\"ok\":true,\"playing\":\"" + JsonEscape(TitleAt(r)) +
+                               "\",\"say\":\"Mình mở bài " + JsonEscape(TitleAt(r)) +
+                               " cho bạn nghe nhé!\"}";
                     });
         mcp.AddTool("self.music.stop", "Stop the song that is playing from the SD card.",
                     PropertyList(), [this](const PropertyList&) -> ReturnValue {

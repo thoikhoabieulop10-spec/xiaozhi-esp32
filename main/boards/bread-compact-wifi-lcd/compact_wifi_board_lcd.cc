@@ -291,6 +291,9 @@ public:
         lv_obj_set_style_text_color(home_info_, lv_color_hex(0x143278), 0);
         lv_label_set_text(home_info_, "");
 
+        wifi_btn_ = MakeButton(home_view_, &nhuy_btn_wifi, main_w - 126, 8, 120, 32,
+                               lv_color_hex(0x5A6E8C), OnWifi, LV_EVENT_CLICKED);
+
         menu_box_ = MakePanel(home_view_, 0, 230, main_w, LV_VER_RES - 230, 0x8CC8FF);
         lv_obj_set_style_bg_opa(menu_box_, LV_OPA_TRANSP, 0);
         const int bx = (main_w - 228) / 2;
@@ -496,6 +499,7 @@ private:
     lv_obj_t* chat_view_ = nullptr;
     lv_obj_t* home_view_ = nullptr;
     lv_obj_t* menu_box_ = nullptr;
+    lv_obj_t* wifi_btn_ = nullptr;
     lv_obj_t* big_face_ = nullptr;
     lv_obj_t* home_title_ = nullptr;
     lv_obj_t* home_hint_ = nullptr;
@@ -591,6 +595,7 @@ private:
         lv_obj_remove_flag(home_title_, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(home_hint_, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(home_info_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(wifi_btn_, LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_pos(home_title_, (main_w - (int)nhuy_title.header.w) / 2 + 22, 250);
         lv_obj_set_pos(home_hint_, (main_w - (int)nhuy_hint.header.w) / 2, 292);
         PlaceStatus(home_view_, 24, 332, main_w - 48);
@@ -610,6 +615,7 @@ private:
         lv_obj_add_flag(home_title_, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(home_hint_, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(home_info_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(wifi_btn_, LV_OBJ_FLAG_HIDDEN);
         PlaceStatus(home_view_, 24, 190, main_w - 48);
         idle_ticks_ = 0;
         poke_ticks_ = 10;
@@ -923,6 +929,18 @@ private:
     }
     static void OnBackHome(lv_event_t* e) { Self(e)->ShowHome(); }
     static void OnHome(lv_event_t* e) { Self(e)->StopAndGoHome(); }
+    // "Doi WiFi": stop everything and open the WiFi setup hotspot (Xiaozhi-xxxx, 192.168.4.1).
+    // Press RESET to leave the setup mode without changing anything.
+    static void OnWifi(lv_event_t* e) {
+        auto self = Self(e);
+        if (self->paused_) self->SetPaused(false, false);
+        NhuYMusic::Get().Stop();
+        self->pending_prompt_.clear();
+        self->ShowHome();
+        Application::GetInstance().Schedule([]() {
+            static_cast<WifiBoard&>(Board::GetInstance()).EnterWifiConfigMode();
+        });
+    }
     static void OnPause(lv_event_t* e) {
         auto self = Self(e);
         self->SetPaused(!self->paused_, true);

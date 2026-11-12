@@ -34,6 +34,7 @@ extern const lv_image_dsc_t nhuy_btn_learn;
 extern const lv_image_dsc_t nhuy_btn_music;
 extern const lv_image_dsc_t nhuy_btn_back;
 extern const lv_image_dsc_t nhuy_btn_back_small;
+extern const lv_image_dsc_t nhuy_btn_wifi;
 extern const lv_image_dsc_t nhuy_calib_text;
 #ifdef __cplusplus
 }

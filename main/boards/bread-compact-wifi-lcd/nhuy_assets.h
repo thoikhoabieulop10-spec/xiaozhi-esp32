@@ -19,6 +19,8 @@ extern const lv_image_dsc_t nhuy_icon_mic;
 extern const lv_image_dsc_t nhuy_icon_vup;
 extern const lv_image_dsc_t nhuy_icon_vdown;
 extern const lv_image_dsc_t nhuy_icon_home;
+extern const lv_image_dsc_t nhuy_icon_pause;
+extern const lv_image_dsc_t nhuy_icon_resume;
 extern const lv_image_dsc_t nhuy_icon_reset;
 extern const lv_image_dsc_t nhuy_big_neutral;
 extern const lv_image_dsc_t nhuy_big_blink;

@@ -143,8 +143,14 @@ public:
 
     void Stop() {
         pending_.store(false);
+        paused_.store(false);
         stop_.store(true);
     }
+
+    // Pause keeps the song position; Resume continues from there.
+    void Pause() { if (playing_.load()) paused_.store(true); }
+    void Resume() { paused_.store(false); }
+    bool paused() const { return paused_.load(); }
 
 private:
     struct Song {
@@ -162,6 +168,7 @@ private:
     std::atomic<bool> pending_{false};
     std::atomic<bool> stop_{false};
     std::atomic<bool> interrupt_{false};
+    std::atomic<bool> paused_{false};
     int last_index_ = -1;
 
     /* ---------------- SD card ---------------- */
@@ -451,6 +458,15 @@ private:
         auto& app = Application::GetInstance();
 
         while (!stop_.load()) {
+            if (paused_.load()) {
+                NhuYCodec::keep_output_on().store(false);  // let the speaker sleep
+                while (paused_.load() && !stop_.load()) {
+                    vTaskDelay(pdMS_TO_TICKS(50));
+                }
+                if (stop_.load()) break;
+                NhuYCodec::keep_output_on().store(true);
+                codec->EnableOutput(true);
+            }
             if (app.GetDeviceState() != kDeviceStateIdle) break;  // user started talking
             if (!eof && filled < kBuf / 2) {
                 size_t r = fread(buf + filled, 1, kBuf - filled, f);
@@ -494,6 +510,7 @@ private:
         }
 
         playing_.store(false);
+        paused_.store(false);
         NhuYCodec::keep_output_on().store(false);
         free(buf);
         free(dec);

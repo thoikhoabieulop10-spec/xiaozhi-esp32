@@ -225,6 +225,8 @@ public:
                    lv_color_hex(0x3C8CFF), OnVolDown, LV_EVENT_PRESSED);
         MakeButton(side_bar_, &nhuy_icon_home, (NY_SIDE_W - 60) / 2, 270, 60, 58,
                    lv_color_hex(0x1EAA5A), OnHome, LV_EVENT_PRESSED);
+        pause_btn_ = MakeButton(side_bar_, &nhuy_icon_pause, (NY_SIDE_W - 60) / 2, 338, 60, 58,
+                                lv_color_hex(0xE08C1E), OnPause, LV_EVENT_PRESSED);
         MakeButton(side_bar_, &nhuy_icon_reset, (NY_SIDE_W - 60) / 2, LV_VER_RES - 72, 60, 62,
                    lv_color_hex(0xDC3C46), OnReset, LV_EVENT_CLICKED);
 
@@ -507,7 +509,10 @@ private:
     const lv_image_dsc_t* shown_face_ = nullptr;
     const lv_image_dsc_t* shown_big_ = nullptr;
     std::string pending_prompt_;
-    uint32_t stop_ticks_ = 0;  // > 0 while the HOME button is stopping the conversation
+    uint32_t stop_ticks_ = 0;
+    bool paused_ = false;          // PAUSE button state
+    bool paused_music_ = false;    // the pause interrupted a song (resume continues it)
+    lv_obj_t* pause_btn_ = nullptr;  // > 0 while the HOME button is stopping the conversation
     int last_story_ = -1;
     int last_song_ = -1;
     uint32_t pending_ticks_ = 0;
@@ -733,13 +738,55 @@ private:
         }
     }
 
+    /* ---------- PAUSE / TIEP ---------- */
+    // pause: stop talking (or pause the song) and keep quiet;
+    // resume: continue the song, or start listening again so we can keep chatting.
+    void SetPaused(bool pause, bool resume_action) {
+        auto& app = Application::GetInstance();
+        auto& music = NhuYMusic::Get();
+        if (pause) {
+            paused_ = true;
+            paused_music_ = music.playing();
+            if (paused_music_) {
+                music.Pause();
+            } else {
+                music.Stop();
+                pending_prompt_.clear();
+                stop_ticks_ = 1;  // abort speaking / close listening
+            }
+        } else {
+            paused_ = false;
+            app.Schedule([]() {
+                Application::GetInstance().GetAudioService().EnableWakeWordDetection(true);
+            });
+            if (resume_action) {
+                if (paused_music_ && music.playing()) {
+                    music.Resume();
+                } else {
+                    music.Resume();
+                    if (view_ != kViewChat) ShowChat();
+                    app.ToggleChatState();  // start listening again
+                }
+            } else {
+                music.Resume();
+            }
+            paused_music_ = false;
+        }
+        if (pause_btn_ != nullptr) {
+            lv_obj_t* img = lv_obj_get_child(pause_btn_, 0);
+            lv_image_set_src(img, paused_ ? &nhuy_icon_resume : &nhuy_icon_pause);
+            lv_obj_set_style_bg_color(pause_btn_, lv_color_hex(paused_ ? 0x1EB45A : 0xE08C1E), 0);
+        }
+    }
+
     /* ---------- music indicator in the status pill ---------- */
     bool music_shown_ = false;
     void UpdateMusicStatus() {
         auto& music = NhuYMusic::Get();
-        bool show = music.busy();
+        bool show = music.busy() || paused_;
         if (show) {
-            std::string t = music.playing() ? "Playing: " + music.title() : "Music...";
+            std::string t = paused_ ? std::string("Paused") :
+                            music.playing() ? "Playing: " + music.title() : std::string("Music...");
             if (!music_shown_ || strcmp(lv_label_get_text(notification_label_), t.c_str()) != 0) {
                 lv_label_set_text(notification_label_, t.c_str());
             }
@@ -755,6 +802,7 @@ private:
 
     /* ---------- HOME: stop everything and go to the home face ---------- */
     void StopAndGoHome() {
+        if (paused_) SetPaused(false, false);
         NhuYMusic::Get().Stop();
         pending_prompt_.clear();
         stop_ticks_ = 1;
@@ -792,6 +840,13 @@ private:
     void Animate() {
         tick_++;
         DeviceState state = Application::GetInstance().GetDeviceState();
+        // While paused: keep the wake word off so Nhu Y stays quiet.
+        if (paused_ && state == kDeviceStateIdle &&
+            Application::GetInstance().GetAudioService().IsWakeWordRunning()) {
+            Application::GetInstance().Schedule([]() {
+                Application::GetInstance().GetAudioService().EnableWakeWordDetection(false);
+            });
+        }
         if (stop_ticks_ > 0) {
             RunStop(state);
         } else if (!pending_prompt_.empty()) {
@@ -850,6 +905,7 @@ private:
     }
     static void OnMic(lv_event_t* e) {
         auto self = Self(e);
+        if (self->paused_) self->SetPaused(false, false);
         if (self->view_ != kViewChat) self->ShowChat();
         Application::GetInstance().ToggleChatState();
     }
@@ -867,6 +923,10 @@ private:
     }
     static void OnBackHome(lv_event_t* e) { Self(e)->ShowHome(); }
     static void OnHome(lv_event_t* e) { Self(e)->StopAndGoHome(); }
+    static void OnPause(lv_event_t* e) {
+        auto self = Self(e);
+        self->SetPaused(!self->paused_, true);
+    }
     static int PickRandom(int count, int& last) {
         int n = (int)(esp_random() % (uint32_t)count);
         if (n == last) n = (n + 1) % count;
@@ -897,13 +957,14 @@ private:
     }
     static void OnMusic(lv_event_t* e) {
         auto self = Self(e);
-        auto& music = NhuYMusic::Get();
-        if (music.Count() > 0) {
-            // Songs on the SD card: stop the conversation and play one right away.
-            self->pending_prompt_.clear();
-            self->stop_ticks_ = 1;
-            music.PlayRandom(true);
-            self->ShowHome();
+        if (self->paused_) self->SetPaused(false, false);
+        if (NhuYMusic::Get().Count() > 0) {
+            // Songs on the SD card: let Nhu Y ask which song we want (or play a random one).
+            self->StartMode(
+                "Như Ý ơi, mình muốn nghe nhạc. Hãy gọi công cụ self.music.list để xem các bài "
+                "trong thẻ nhớ, gợi ý ngắn cho mình 3 bài rồi hỏi mình muốn nghe bài nào. Khi mình "
+                "nói tên bài thì dùng self.music.play, nếu mình nói ngẫu nhiên hoặc bài nào cũng "
+                "được thì dùng self.music.play_random.");
             return;
         }
         // No SD card: ask the AI (song list "Danh sach nhac" in the Role text on xiaozhi.me).

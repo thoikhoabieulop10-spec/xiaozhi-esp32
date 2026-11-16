@@ -596,7 +596,7 @@ private:
         lv_obj_remove_flag(home_hint_, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(home_info_, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(wifi_btn_, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_pos(home_title_, (main_w - (int)nhuy_title.header.w) / 2 + 22, 250);
+        lv_obj_set_pos(home_title_, (main_w - (int)nhuy_title.header.w) / 2 + 6, 250);
         lv_obj_set_pos(home_hint_, (main_w - (int)nhuy_hint.header.w) / 2, 292);
         PlaceStatus(home_view_, 24, 332, main_w - 48);
         lv_obj_set_pos(home_info_, 10, 376);
@@ -962,7 +962,7 @@ private:
             "The Kind Snowman"};
         auto self = Self(e);
         int n = PickRandom(sizeof(stories) / sizeof(stories[0]), self->last_story_);
-        self->StartMode(std::string("Như Ý ơi, kể cho mình nghe Truyện số ") +
+        self->StartMode(std::string("LingoBot ơi, kể cho mình nghe Truyện số ") +
                         std::to_string(n + 1) + ": \"" + stories[n] +
                         "\" trong thư viện truyện tiếng Anh nhé. Đọc bằng tiếng Anh thật chậm "
                         "và rõ, rồi nói ý nghĩa bằng tiếng Việt, dạy 3 từ vựng và hỏi mình "
@@ -970,7 +970,7 @@ private:
     }
     static void OnLearn(lv_event_t* e) {
         Self(e)->StartMode(
-            "Như Ý ơi, mình muốn học tiếng Anh. Dạy mình 3 từ vựng mới kèm câu ví dụ đơn giản, "
+            "LingoBot ơi, mình muốn học tiếng Anh. Dạy mình 3 từ vựng mới kèm câu ví dụ đơn giản, "
             "rồi mời mình đọc lại từng từ nhé.");
     }
     static void OnMusic(lv_event_t* e) {
@@ -979,7 +979,7 @@ private:
         if (NhuYMusic::Get().Count() > 0) {
             // Songs on the SD card: let Nhu Y ask which song we want (or play a random one).
             self->StartMode(
-                "Như Ý ơi, mình muốn nghe nhạc. Hãy gọi công cụ self.music.list để xem các bài "
+                "LingoBot ơi, mình muốn nghe nhạc. Hãy gọi công cụ self.music.list để xem các bài "
                 "trong thẻ nhớ, gợi ý ngắn cho mình 3 bài rồi hỏi mình muốn nghe bài nào. Khi mình "
                 "nói tên bài thì dùng self.music.play, nếu mình nói ngẫu nhiên hoặc bài nào cũng "
                 "được thì dùng self.music.play_random.");

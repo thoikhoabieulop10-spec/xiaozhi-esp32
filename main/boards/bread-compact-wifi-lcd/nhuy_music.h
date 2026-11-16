@@ -1,7 +1,7 @@
 // ============================================================================
 //  Nhu Y music player: plays MP3 files from the SD card (slot on the back of the
 //  4.0" display, header J4) through the speaker, and exposes MCP tools so the AI
-//  can list / play / stop songs by voice ("Như Ý ơi, phát bài Count on Me").
+//  can list / play / stop songs by voice ("LingoBot ơi, phát bài Count on Me").
 //
 //  Copy .mp3 files to the root of the SD card or to a folder named "music".
 //  The file name (without .mp3) is the song title.

@@ -88,8 +88,8 @@ static const gc9a01_lcd_init_cmd_t gc9107_lcd_init_cmds[] = {
 #define TOUCH_MISO_PIN  GPIO_NUM_13   // T_DO
 
 // ---- UI geometry / colours ----
-#define NY_SIDE_W     72
-#define NY_HEADER_H   128
+#define NY_BAR_H      66    // bottom button bar (landscape 480x320)
+#define NY_PANEL_W    140   // avatar panel at the left of the chat view
 #define NY_MAX_MSG    16
 #define NY_SONG_COUNT 10   // number of songs in "Danh sach nhac" (Role text)
 
@@ -191,7 +191,8 @@ public:
         auto theme = static_cast<LvglTheme*>(current_theme_);
         const lv_font_t* text_font = theme->text_font()->font();
         const lv_font_t* icon_font = theme->icon_font()->font();
-        const int main_w = LV_HOR_RES - NY_SIDE_W;
+        const int main_h = LV_VER_RES - NY_BAR_H;      // 254: area above the button bar
+        const int chat_w = LV_HOR_RES - NY_PANEL_W;     // chat bubbles area width
 
         lv_obj_t* screen = lv_screen_active();
         lv_obj_set_style_text_font(screen, text_font, 0);
@@ -200,65 +201,69 @@ public:
         lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
         lv_obj_remove_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
-        /* ---------------- Left button column ---------------- */
+        /* ---------------- Bottom button bar (landscape) ---------------- */
         side_bar_ = lv_obj_create(screen);
         lv_obj_remove_style_all(side_bar_);
-        lv_obj_set_size(side_bar_, NY_SIDE_W, LV_VER_RES);
-        lv_obj_set_pos(side_bar_, 0, 0);
+        lv_obj_set_size(side_bar_, LV_HOR_RES, NY_BAR_H);
+        lv_obj_set_pos(side_bar_, 0, main_h);
         lv_obj_set_style_bg_opa(side_bar_, LV_OPA_COVER, 0);
         lv_obj_set_style_bg_color(side_bar_, lv_color_hex(0x1E4BA0), 0);
         lv_obj_remove_flag(side_bar_, LV_OBJ_FLAG_SCROLLABLE);
 
-        mic_btn_ = MakeButton(side_bar_, &nhuy_icon_mic, (NY_SIDE_W - 60) / 2, 10, 60, 76,
+        const int by = (NY_BAR_H - 60) / 2;
+        mic_btn_ = MakeButton(side_bar_, &nhuy_icon_mic, 6, by, 60, 60,
                               lv_color_hex(0x3C8CFF), OnMic, LV_EVENT_PRESSED);
-        MakeButton(side_bar_, &nhuy_icon_vup, (NY_SIDE_W - 60) / 2, 102, 60, 58,
+        MakeButton(side_bar_, &nhuy_icon_vup, 72, by, 58, 60,
                    lv_color_hex(0x3C8CFF), OnVolUp, LV_EVENT_PRESSED);
 
         volume_label_ = lv_label_create(side_bar_);
-        lv_obj_set_width(volume_label_, NY_SIDE_W);
-        lv_obj_set_pos(volume_label_, 0, 166);
+        lv_obj_set_width(volume_label_, 46);
+        lv_obj_set_pos(volume_label_, 132, NY_BAR_H / 2 - 9);
         lv_obj_set_style_text_align(volume_label_, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_style_text_color(volume_label_, lv_color_white(), 0);
         lv_label_set_text(volume_label_, "");
 
-        MakeButton(side_bar_, &nhuy_icon_vdown, (NY_SIDE_W - 60) / 2, 196, 60, 58,
+        MakeButton(side_bar_, &nhuy_icon_vdown, 180, by, 58, 60,
                    lv_color_hex(0x3C8CFF), OnVolDown, LV_EVENT_PRESSED);
-        MakeButton(side_bar_, &nhuy_icon_home, (NY_SIDE_W - 60) / 2, 270, 60, 58,
+        MakeButton(side_bar_, &nhuy_icon_home, 244, by, 58, 60,
                    lv_color_hex(0x1EAA5A), OnHome, LV_EVENT_PRESSED);
-        pause_btn_ = MakeButton(side_bar_, &nhuy_icon_pause, (NY_SIDE_W - 60) / 2, 338, 60, 58,
+        pause_btn_ = MakeButton(side_bar_, &nhuy_icon_pause, 308, by, 58, 60,
                                 lv_color_hex(0xE08C1E), OnPause, LV_EVENT_PRESSED);
-        MakeButton(side_bar_, &nhuy_icon_reset, (NY_SIDE_W - 60) / 2, LV_VER_RES - 72, 60, 62,
+        MakeButton(side_bar_, &nhuy_icon_reset, 372, by, 58, 60,
                    lv_color_hex(0xDC3C46), OnReset, LV_EVENT_CLICKED);
 
-        /* ================= CHAT VIEW ================= */
-        chat_view_ = MakePanel(screen, NY_SIDE_W, 0, main_w, LV_VER_RES, 0xFDF8EE);
+        network_label_ = MakeIcon(side_bar_, icon_font, 0xFFFFFF, -8);
+        lv_obj_align(network_label_, LV_ALIGN_TOP_RIGHT, -10, 8);
+        battery_label_ = MakeIcon(side_bar_, icon_font, 0xFFFFFF, -8);
+        lv_obj_align(battery_label_, LV_ALIGN_BOTTOM_RIGHT, -10, -8);
+        mute_label_ = MakeIcon(side_bar_, icon_font, 0xFFB4B4, -8);
+        lv_obj_align(mute_label_, LV_ALIGN_LEFT_MID, 436, 0);
 
-        top_bar_ = MakePanel(chat_view_, 0, 0, main_w, NY_HEADER_H, 0x8CC8FF);
+        /* ================= CHAT VIEW: avatar panel on the left, bubbles on the right ======== */
+        chat_view_ = MakePanel(screen, 0, 0, LV_HOR_RES, main_h, 0xFDF8EE);
+
+        top_bar_ = MakePanel(chat_view_, 0, 0, NY_PANEL_W, main_h, 0x8CC8FF);
 
         avatar_ = lv_image_create(top_bar_);
         lv_image_set_src(avatar_, &nhuy_face_neutral);
-        lv_obj_set_pos(avatar_, 2, NY_HEADER_H - nhuy_face_neutral.header.h);
+        lv_obj_set_pos(avatar_, (NY_PANEL_W - nhuy_face_neutral.header.w) / 2, 4);
         lv_obj_add_flag(avatar_, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_event_cb(avatar_, OnBackHome, LV_EVENT_PRESSED, this);
 
         lv_obj_t* title = lv_image_create(top_bar_);
         lv_image_set_src(title, &nhuy_title);
-        lv_obj_set_pos(title, 110, 20);
+        lv_obj_set_pos(title, (NY_PANEL_W - nhuy_title.header.w) / 2 + 4, 108);
 
-        MakeButton(top_bar_, &nhuy_btn_back_small, 110, 56, 104, 30, lv_color_hex(0x286EDC),
-                   OnBackHome, LV_EVENT_PRESSED);
+        MakeButton(top_bar_, &nhuy_btn_back_small, (NY_PANEL_W - 104) / 2, 146, 104, 30,
+                   lv_color_hex(0x286EDC), OnBackHome, LV_EVENT_PRESSED);
 
-        network_label_ = MakeIcon(top_bar_, icon_font, 0x143278, -6);
-        battery_label_ = MakeIcon(top_bar_, icon_font, 0x143278, -34);
-        mute_label_ = MakeIcon(top_bar_, icon_font, 0xDC3C46, -62);
-
-        lv_obj_t* divider = MakePanel(chat_view_, 0, NY_HEADER_H, main_w, 3, 0x286EDC);
+        lv_obj_t* divider = MakePanel(chat_view_, NY_PANEL_W, 0, 3, main_h, 0x286EDC);
         (void)divider;
 
         content_ = lv_obj_create(chat_view_);
         lv_obj_remove_style_all(content_);
-        lv_obj_set_size(content_, main_w, LV_VER_RES - NY_HEADER_H - 3);
-        lv_obj_set_pos(content_, 0, NY_HEADER_H + 3);
+        lv_obj_set_size(content_, chat_w - 3, main_h);
+        lv_obj_set_pos(content_, NY_PANEL_W + 3, 0);
         lv_obj_set_style_bg_opa(content_, LV_OPA_COVER, 0);
         lv_obj_set_style_bg_color(content_, lv_color_hex(0xFDF8EE), 0);
         lv_obj_set_style_pad_all(content_, 8, 0);
@@ -270,7 +275,7 @@ public:
         lv_obj_set_scrollbar_mode(content_, LV_SCROLLBAR_MODE_OFF);
 
         /* ================= HOME / MENU VIEW ================= */
-        home_view_ = MakePanel(screen, NY_SIDE_W, 0, main_w, LV_VER_RES, 0x8CC8FF);
+        home_view_ = MakePanel(screen, 0, 0, LV_HOR_RES, main_h, 0x8CC8FF);
 
         big_face_ = lv_image_create(home_view_);
         lv_image_set_src(big_face_, &nhuy_big_neutral);
@@ -285,25 +290,25 @@ public:
         lv_image_set_src(home_hint_, &nhuy_hint);
 
         home_info_ = lv_label_create(home_view_);
-        lv_obj_set_width(home_info_, main_w - 20);
+        lv_obj_set_width(home_info_, 236);
         lv_label_set_long_mode(home_info_, LV_LABEL_LONG_WRAP);
         lv_obj_set_style_text_align(home_info_, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_style_text_color(home_info_, lv_color_hex(0x143278), 0);
         lv_label_set_text(home_info_, "");
 
-        wifi_btn_ = MakeButton(home_view_, &nhuy_btn_wifi, main_w - 126, 8, 120, 32,
+        wifi_btn_ = MakeButton(home_view_, &nhuy_btn_wifi, LV_HOR_RES - 126, 8, 120, 32,
                                lv_color_hex(0x5A6E8C), OnWifi, LV_EVENT_CLICKED);
 
-        menu_box_ = MakePanel(home_view_, 0, 230, main_w, LV_VER_RES - 230, 0x8CC8FF);
+        menu_box_ = MakePanel(home_view_, 222, 0, LV_HOR_RES - 222, main_h, 0x8CC8FF);
         lv_obj_set_style_bg_opa(menu_box_, LV_OPA_TRANSP, 0);
-        const int bx = (main_w - 228) / 2;
-        MakeButton(menu_box_, &nhuy_btn_story, bx, 4, 228, 52, lv_color_hex(0x8C5AE6), OnStory,
+        const int bx = (LV_HOR_RES - 222 - 236) / 2;
+        MakeButton(menu_box_, &nhuy_btn_story, bx, 8, 236, 52, lv_color_hex(0x8C5AE6), OnStory,
                    LV_EVENT_PRESSED);
-        MakeButton(menu_box_, &nhuy_btn_learn, bx, 64, 228, 52, lv_color_hex(0x1EAA5A), OnLearn,
+        MakeButton(menu_box_, &nhuy_btn_learn, bx, 68, 236, 52, lv_color_hex(0x1EAA5A), OnLearn,
                    LV_EVENT_PRESSED);
-        MakeButton(menu_box_, &nhuy_btn_music, bx, 124, 228, 52, lv_color_hex(0xF08C28),
+        MakeButton(menu_box_, &nhuy_btn_music, bx, 128, 236, 52, lv_color_hex(0xF08C28),
                    OnMusic, LV_EVENT_PRESSED);
-        MakeButton(menu_box_, &nhuy_btn_back, bx, 184, 228, 52, lv_color_hex(0x5A6E8C), OnBackHome,
+        MakeButton(menu_box_, &nhuy_btn_back, bx, 188, 236, 52, lv_color_hex(0x5A6E8C), OnBackHome,
                    LV_EVENT_PRESSED);
 
         /* Status pill (moved between the views) */
@@ -377,8 +382,7 @@ public:
             lv_obj_delete(first);
         }
 
-        const int main_w = LV_HOR_RES - NY_SIDE_W;
-        const int max_text_w = main_w * 80 / 100 - 20;
+        const int max_text_w = (LV_HOR_RES - NY_PANEL_W - 3) * 80 / 100 - 20;
 
         lv_obj_t* row = lv_obj_create(content_);
         lv_obj_remove_style_all(row);
@@ -586,48 +590,45 @@ private:
 
     /* ---------- views ---------- */
     void ShowHome() {
-        const int main_w = LV_HOR_RES - NY_SIDE_W;
         view_ = kViewHome;
         lv_obj_add_flag(chat_view_, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(home_view_, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(menu_box_, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_pos(big_face_, (main_w - (int)nhuy_big_neutral.header.w) / 2, 84);
+        lv_obj_set_pos(big_face_, 26, (LV_VER_RES - NY_BAR_H - (int)nhuy_big_neutral.header.h) / 2 + 6);
         lv_obj_remove_flag(home_title_, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(home_hint_, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(home_info_, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(wifi_btn_, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_pos(home_title_, (main_w - (int)nhuy_title.header.w) / 2 + 6, 250);
-        lv_obj_set_pos(home_hint_, (main_w - (int)nhuy_hint.header.w) / 2, 292);
-        PlaceStatus(home_view_, 24, 332, main_w - 48);
-        lv_obj_set_pos(home_info_, 10, 376);
+        lv_obj_set_pos(home_title_, 232 + (244 - (int)nhuy_title.header.w) / 2 + 6, 56);
+        lv_obj_set_pos(home_hint_, 230, 98);
+        PlaceStatus(home_view_, 240, 134, 226);
+        lv_obj_set_pos(home_info_, 236, 176);
         idle_ticks_ = 0;
         shown_big_ = nullptr;
         ApplyFace(base_face_);
     }
 
     void ShowMenu() {
-        const int main_w = LV_HOR_RES - NY_SIDE_W;
         view_ = kViewMenu;
         lv_obj_add_flag(chat_view_, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(home_view_, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(menu_box_, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_pos(big_face_, (main_w - (int)nhuy_big_neutral.header.w) / 2, 6);
+        lv_obj_set_pos(big_face_, 26, 8);
         lv_obj_add_flag(home_title_, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(home_hint_, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(home_info_, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(wifi_btn_, LV_OBJ_FLAG_HIDDEN);
-        PlaceStatus(home_view_, 24, 190, main_w - 48);
+        PlaceStatus(home_view_, 14, 194, 194);
         idle_ticks_ = 0;
         poke_ticks_ = 10;
         ApplyFace(base_face_);
     }
 
     void ShowChat() {
-        const int main_w = LV_HOR_RES - NY_SIDE_W;
         view_ = kViewChat;
         lv_obj_add_flag(home_view_, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(chat_view_, LV_OBJ_FLAG_HIDDEN);
-        PlaceStatus(top_bar_, 108, NY_HEADER_H - 34, main_w - 112);
+        PlaceStatus(top_bar_, 6, 190, NY_PANEL_W - 12);
         idle_ticks_ = 0;
         shown_face_ = nullptr;
         ApplyFace(base_face_);
@@ -1083,7 +1084,7 @@ private:
 
     /* ---------------- Touch ---------------- */
     bool LoadCalibration() {
-        Settings s("touch", false);
+        Settings s("touch_l", false);
         if (s.GetInt("ok", 0) != 1) {
             return false;
         }
@@ -1096,7 +1097,7 @@ private:
     }
 
     void SaveCalibration() {
-        Settings s("touch", true);
+        Settings s("touch_l", true);
         s.SetInt("sw", cal_swap_ ? 1 : 0);
         s.SetInt("x0", cal_x0_);
         s.SetInt("x1", cal_x1_);

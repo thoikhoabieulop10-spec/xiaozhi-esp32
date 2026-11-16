@@ -209,12 +209,20 @@
 #endif
 
 #ifdef CONFIG_LCD_ST7796_320X480_NO_IPS
+// LingoBot robot: the 4.0" screen is mounted LANDSCAPE (480 x 320) as the robot's face.
+// If the picture is upside down after flashing, change LINGOBOT_FLIP_180 to 1.
+#define LINGOBOT_FLIP_180 0
 #define LCD_TYPE_ST7789_SERIAL
-#define DISPLAY_WIDTH   320
-#define DISPLAY_HEIGHT  480
+#define DISPLAY_WIDTH   480
+#define DISPLAY_HEIGHT  320
+#if LINGOBOT_FLIP_180
 #define DISPLAY_MIRROR_X true
+#define DISPLAY_MIRROR_Y true
+#else
+#define DISPLAY_MIRROR_X false
 #define DISPLAY_MIRROR_Y false
-#define DISPLAY_SWAP_XY false
+#endif
+#define DISPLAY_SWAP_XY true
 #define DISPLAY_INVERT_COLOR    false
 #define DISPLAY_RGB_ORDER  LCD_RGB_ELEMENT_ORDER_BGR
 #define DISPLAY_OFFSET_X  0
